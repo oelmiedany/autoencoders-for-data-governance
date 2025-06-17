@@ -153,3 +153,4 @@ checklink/cookies.txt
 
 /venv
 /local_data
+/trained_models
