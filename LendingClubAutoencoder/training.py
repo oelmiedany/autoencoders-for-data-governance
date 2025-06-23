@@ -13,7 +13,7 @@ import glob
 import os
 
 # %% ../notebooks/3_training.ipynb 2
-def masked_vae_loss(reconstruction:torch.Tensor, x:torch.Tensor, mean:torch.Tensor, log_variance:torch.Tensor, mask:torch.Tensor)->tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def masked_vae_loss(reconstruction:torch.Tensor, x:torch.Tensor, not_null_mask:torch.Tensor, binary_mask:torch.Tensor)->tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     '''
     Custom VAE loss function with masking for handling replaced NaN values
     
@@ -21,30 +21,31 @@ def masked_vae_loss(reconstruction:torch.Tensor, x:torch.Tensor, mean:torch.Tens
         reconstruction (torch.Tensor): Reconstructed input from the decoder
         x (torch.Tensor): Original input
         mean (torch.Tensor): Mean of the latent distribution
-        log_variance (torch.Tensor): Log variance of the latent distribution
         mask (torch.Tensor): Binary mask where 1 indicates valid values and 0 indicates replaced NaN values
 
     Returns:
         tuple: (total_loss, reconstruction_loss, kl_divergence_loss)
     '''
+
     # Reconstruction Loss (masked MSE)
+    inverse_binary_mask = ~binary_mask
+
+    binary_mask = not_null_mask & binary_mask[None, :]
+    numeric_mask = not_null_mask & inverse_binary_mask[None, :]
     
-    mse_loss = F.mse_loss(reconstruction * mask, x * mask, reduction='sum')# Only compute MSE for non-masked values
-    mse_loss = mse_loss / mask.sum()# normalise by the number of unmasked elements
+    mse_loss = F.mse_loss(reconstruction[numeric_mask], x[numeric_mask], reduction='mean')# Only compute MSE for non-masked values
     rmse_loss = torch.sqrt(mse_loss)
-    
-    # KL Divergence Loss
-    kl_loss = -0.5 * torch.sum(1 + log_variance - mean.pow(2) - log_variance.exp())
-    kl_loss = kl_loss / x.size(0)  # normalise by batch size
+
+    bce_loss = F.binary_cross_entropy(reconstruction[binary_mask], x[binary_mask], reduction='mean')
     
     # Total loss (beta-VAE formulation)
-    total_loss = rmse_loss + kl_loss
+    total_loss = rmse_loss + bce_loss
         
-    return total_loss, rmse_loss, kl_loss
+    return total_loss, rmse_loss, bce_loss
 
 
 # %% ../notebooks/3_training.ipynb 3
-def train_variational_autoencoder(model, optimiser, train_loader, validation_loader, n_epochs:int=100, patience:int=10, device:str='cuda'):
+def train_variational_autoencoder(model, optimiser, train_loader, validation_loader, binary_mask, n_epochs:int=100, patience:int=10, device:str='cuda'):
     '''
     Training loop for the VAE with early stopping
     
@@ -57,6 +58,9 @@ def train_variational_autoencoder(model, optimiser, train_loader, validation_loa
         patience (int): Number of epochs to wait for improvement before stopping
         device (str): Device to train on
     '''
+    model = model.to(device)
+    binary_mask = binary_mask.to(device)
+
     first_run = True
     
     best_validation_loss = float('inf')
@@ -65,16 +69,16 @@ def train_variational_autoencoder(model, optimiser, train_loader, validation_loa
     for epoch in range(n_epochs):
         model.train()
         train_total_loss = 0
-        train_reconstruction_loss = 0
-        train_kl_loss = 0
+        train_rmse_loss = 0
+        train_bce_loss = 0
         
-        for data, mask in train_loader:
-            data, mask = data.to(device), mask.to(device)
+        for data, not_null_mask in train_loader:
+            data, not_null_mask = data.to(device), not_null_mask.to(device)
             
-            reconstruction, mean, log_variance = model(data)
+            reconstruction, mean = model(data)
 
-            loss, reconstruction_loss, kl_loss = masked_vae_loss(
-                reconstruction, data, mean, log_variance, mask
+            loss, rmse_loss, bce_loss = masked_vae_loss(
+                reconstruction, data, not_null_mask, binary_mask
             )
             
             optimiser.zero_grad()
@@ -82,27 +86,29 @@ def train_variational_autoencoder(model, optimiser, train_loader, validation_loa
             optimiser.step()
             
             train_total_loss = train_total_loss + loss.item()
-            train_reconstruction_loss = train_reconstruction_loss + reconstruction_loss.item()
-            train_kl_loss = train_kl_loss + kl_loss.item()
+            train_rmse_loss = train_rmse_loss + rmse_loss.item()
+            train_bce_loss = train_bce_loss + bce_loss.item()
             
         # Validation Phase  
         model.eval()
         validation_total_loss = 0
-        validation_reconstruction_loss = 0
-        validation_kl_loss = 0
+        validation_rmse_loss = 0
+        validation_bce_loss = 0
         
         with torch.no_grad():  # No gradients needed for validation
-            for data, mask in validation_loader:
-                data, mask = data.to(device), mask.to(device)
+            for data, not_null_mask in validation_loader:
+                data, not_null_mask = data.to(device), not_null_mask.to(device)
                 
-                reconstruction, mean, log_variance = model(data)
-                loss, reconstruction_loss, kl_loss = masked_vae_loss(
-                    reconstruction, data, mean, log_variance, mask
+                reconstruction, mean = model(data)
+                loss, rmse_loss, bce_loss = masked_vae_loss(
+                    reconstruction, data, not_null_mask, binary_mask
                 )
                 
                 validation_total_loss = validation_total_loss + loss.item()
-                validation_reconstruction_loss = validation_reconstruction_loss + reconstruction_loss.item()
-                validation_kl_loss = validation_kl_loss + kl_loss.item()
+                validation_rmse_loss = validation_rmse_loss + rmse_loss.item()
+                validation_bce_loss = validation_bce_loss + bce_loss.item()
+
+        print("Mean stats:", mean.mean().item(), mean.std().item())
         
         # Calculate average losses
         average_train_loss = train_total_loss / len(train_loader)
@@ -110,7 +116,7 @@ def train_variational_autoencoder(model, optimiser, train_loader, validation_loa
         
         print(f'Epoch {epoch+1}/{n_epochs}:')
         print(f'  Training Loss: {average_train_loss:.4f}')
-        print(f'  Validation Loss: {average_validation_loss:.4f}')
+        print(f'  Total Validation Loss: {average_validation_loss:.4f}, Total RMSE Loss{(validation_rmse_loss/ len(validation_loader)):.4f}, Total BCE Loss{(validation_bce_loss/ len(validation_loader)):.4f}')
         
         # Early stopping check
         if average_validation_loss < best_validation_loss:
@@ -131,7 +137,7 @@ def train_variational_autoencoder(model, optimiser, train_loader, validation_loa
                 break
 
 # %% ../notebooks/3_training.ipynb 4
-def get_best_model(model_class, file_name:str = None):
+def get_best_model(model_class, sigmoid_mask, file_name:str = None):
     if file_name is None:
         matching_files = glob.glob('trained_models/vae_best*.pt')
 
@@ -145,9 +151,10 @@ def get_best_model(model_class, file_name:str = None):
     parameters = parameters.split('-')[1:]
 
     model_args = {parameter.split(':')[0] : int(parameter.split(':')[1]) for parameter in parameters}
-
+    model_args['sigmoid_mask'] = sigmoid_mask
+ 
     model = model_class(**model_args)
-    model.load_state_dict(torch.load(file_name))
+    model.load_state_dict(torch.load(file_name, map_location=torch.device('cpu')))
 
     return model
 

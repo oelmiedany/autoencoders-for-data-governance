@@ -11,22 +11,22 @@ import torch
 from datetime import datetime, timedelta
 
 # %% ../notebooks/4_testing.ipynb 2
-def test_vae(model_file_name, test_loader, device):
+def test_vae(model_file_name, test_loader, sigmoid_mask, binary_mask, device):
     
-    model = training.get_best_model(autoencoders.VariationalAutoencoder, model_file_name)
+    model = training.get_best_model(autoencoders.VariationalAutoencoder, sigmoid_mask, model_file_name)
     
     model.eval()
     test_total_loss = 0
-    test_mse_loss = 0
+    test_rmse_loss = 0
     test_kl_loss = 0
     n_batches = 0
 
     with torch.no_grad():
         for data_batch, mask_batch in test_loader:
             data_batch, mask_batch = data_batch.to(device), mask_batch.to(device)
-            reconstruction, mu, log_var = model(data_batch)
+            reconstruction, mean = model(data_batch)
             
-            total_loss, rmse_loss, kl_loss = training.masked_vae_loss(reconstruction, data_batch, mu, log_var, mask_batch)
+            total_loss, rmse_loss, kl_loss = training.masked_vae_loss(reconstruction, data_batch, mask_batch, binary_mask)
             
             test_total_loss = test_total_loss + total_loss.item()
             test_rmse_loss = test_rmse_loss + rmse_loss.item()
@@ -42,7 +42,7 @@ def test_vae(model_file_name, test_loader, device):
 
 
 # %% ../notebooks/4_testing.ipynb 3
-def cross_validate_vae(start: int, end: int, learning_rate: float = 1e-4, n_folds: int = 5):
+def cross_validate_vae(lending_club_data_handler: preprocessing.DataHandler, start: int, end: int, learning_rate: float = 1e-4, n_folds: int = 5, ):
     '''
     Perform k-fold cross-validation for the VAE
     
@@ -51,8 +51,6 @@ def cross_validate_vae(start: int, end: int, learning_rate: float = 1e-4, n_fold
         end (datetime): End date
         n_folds (int): Number of folds
     '''
-
-    lending_club_data_handler = preprocessing.DataHandler(csv_path='../local_data/all_lending_club_loan_data_2007-2018.csv')
 
     total_days = (end - start).days
 
@@ -89,13 +87,13 @@ def cross_validate_vae(start: int, end: int, learning_rate: float = 1e-4, n_fold
         validation_data, validation_mask = lending_club_data_handler.get_test_data(validation_start, validation_end)
         test_data, test_mask = lending_club_data_handler.get_test_data(test_start, test_end)
 
-        train_loader = preprocessing.to_torch(train_data,train_mask)
-        validation_loader = preprocessing.to_torch(validation_data,validation_mask)
-        test_loader = preprocessing.to_torch(test_data,test_mask)
+        train_loader = preprocessing.to_torch_dataloader(train_data,train_mask)
+        validation_loader = preprocessing.to_torch_dataloader(validation_data,validation_mask)
+        test_loader = preprocessing.to_torch_dataloader(test_data,test_mask)
 
 
         # Instantiate model and optimiser 
-        model = autoencoders.VariationalAutoencoder(input_size=len(train_data[0]), hidden_size=64, latent_size=32)
+        model = autoencoders.VariationalAutoencoder(input_size=len(train_data[0]))
         optimiser = torch.optim.Adam(model.parameters(), lr=learning_rate)#original is 1e-3
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -104,7 +102,7 @@ def cross_validate_vae(start: int, end: int, learning_rate: float = 1e-4, n_fold
         training.train_variational_autoencoder(model, optimiser, train_loader, validation_loader, device=device)
 
         # Evaluate best model for this fold
-        model_file_name = f'../trained_models/vae_best-input_size:{len(train_data[0])}.pt'
+        model_file_name = f'trained_models/vae_best-input_size:{len(train_data[0])}.pt'
         
         test_total_loss, test_mse_loss, test_kl_loss = test_vae(model_file_name, test_loader, device)
 

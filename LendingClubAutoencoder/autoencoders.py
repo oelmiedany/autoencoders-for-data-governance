@@ -6,10 +6,11 @@ __all__ = ['VariationalAutoencoder']
 # %% ../notebooks/2_autoencoders.ipynb 0
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 # %% ../notebooks/2_autoencoders.ipynb 1
 class VariationalAutoencoder(nn.Module):
-    def __init__(self, input_size:int):
+    def __init__(self, input_size:int, sigmoid_mask: torch.Tensor):
         '''
         Variational Autoencoder for data compression and reconstruction
         
@@ -22,6 +23,7 @@ class VariationalAutoencoder(nn.Module):
 
         #Stores key model parameters
         self.input_size = input_size
+
         hidden_size_1 = 64
         hidden_size_2 = 32
         latent_size = 16
@@ -29,11 +31,9 @@ class VariationalAutoencoder(nn.Module):
         # Encoder architecture
         self.encoder = nn.Sequential(
             nn.Linear(input_size, hidden_size_1),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_size_1),# Normalises activations
+            nn.SELU(),
             nn.Linear(hidden_size_1, hidden_size_2), 
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_size_2)
+            nn.SELU(),
         )
         
         # Latent space parameters
@@ -43,13 +43,14 @@ class VariationalAutoencoder(nn.Module):
         # Decoder architecture
         self.decoder = nn.Sequential(
             nn.Linear(latent_size, hidden_size_2),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_size_2),
+            nn.SELU(),
+            nn.Dropout(0.2),
             nn.Linear(hidden_size_2, hidden_size_1),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_size_1),
+            nn.SELU(),
             nn.Linear(hidden_size_1, input_size)
         )
+
+        self.register_buffer('sigmoid_mask', sigmoid_mask.unsqueeze(0))
         
     def encode(self, x:torch.Tensor)->tuple[torch.Tensor, torch.Tensor]:
         '''
@@ -78,6 +79,8 @@ class VariationalAutoencoder(nn.Module):
         Returns:
             torch.Tensor: Sampled point from the latent distribution
         '''
+        log_variance = F.softplus(log_variance) + 1e-6 
+
         std = torch.exp(0.5 * log_variance)
         eps = torch.randn_like(std)  # Random noise from standard normal
         return mean + eps * std
@@ -102,10 +105,17 @@ class VariationalAutoencoder(nn.Module):
             x (torch.Tensor): Input tensor
             
         Returns:
-            tuple: (reconstruction, mean, log_variance)
+            tuple: (reconstruction, mean)
         '''
-        mean, log_variance = self.encode(x)
-        latent_vector = self.reparameterise(mean, log_variance)
-        reconstruction = self.decode(latent_vector)
-        return reconstruction, mean, log_variance
+        mean, _ = self.encode(x)
+        #latent_vector = self.reparameterise(mean, log_variance)
+        raw_reconstruction = self.decode(mean)
+
+        reconstruction = torch.where(
+            self.sigmoid_mask,                     # broadcast to [B,input_size]
+            torch.sigmoid(raw_reconstruction),
+            raw_reconstruction
+            )
+
+        return reconstruction, mean
 
