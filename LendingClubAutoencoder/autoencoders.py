@@ -44,7 +44,7 @@ class VariationalAutoencoder(nn.Module):
         self.decoder = nn.Sequential(
             nn.Linear(latent_size, hidden_size_2),
             nn.SELU(),
-            nn.Dropout(0.2),
+            nn.Dropout(0.1),
             nn.Linear(hidden_size_2, hidden_size_1),
             nn.SELU(),
             nn.Linear(hidden_size_1, input_size)

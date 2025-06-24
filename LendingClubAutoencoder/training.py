@@ -39,7 +39,7 @@ def masked_vae_loss(reconstruction:torch.Tensor, x:torch.Tensor, not_null_mask:t
     bce_loss = F.binary_cross_entropy(reconstruction[binary_mask], x[binary_mask], reduction='mean')
     
     # Total loss (beta-VAE formulation)
-    total_loss = rmse_loss + bce_loss
+    total_loss = rmse_loss + bce_loss * 2
         
     return total_loss, rmse_loss, bce_loss
 
