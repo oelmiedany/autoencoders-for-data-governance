@@ -154,3 +154,4 @@ checklink/cookies.txt
 /venv
 /local_data
 /trained_models
+vector_representations.csv
