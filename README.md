@@ -2,7 +2,7 @@
 
 This repository accompanies the white paper *From Governance to Insight: Using Autoencoders to Monitor Data Distribution Drift*. It explores the application of autoencoders in modern data governance strategies, particularly their use in surfacing distribution shifts in high-dimensional tabular data.
 
-The full paper can be found [here](#https://1drv.ms/b/c/61e43c887e06eaac/EX7GH0tV7idPjUWw6Q73ZYYBGUpTSZfsHleCBBWa5v2wEg?e=iA5TtQ)
+The full paper can be found [here](https://1drv.ms/b/c/61e43c887e06eaac/EX7GH0tV7idPjUWw6Q73ZYYBGUpTSZfsHleCBBWa5v2wEg?e=iA5TtQ)
 
 ## Project Overview
 
@@ -75,10 +75,10 @@ pip install -e .
 
 To skip training and quickly start exploring latent vector analysis, you can use the provided pretrained assets:
 
-- **Pretrained autoencoder model**: [Download here](#https://1drv.ms/u/c/61e43c887e06eaac/EQkBSGRIU31Hh-UEFmzUVZwBEnb9n7KlvbMFwpMJXoGBow?e=w1cAVo)
+- **Pretrained autoencoder model**: [Download here](https://1drv.ms/u/c/61e43c887e06eaac/EQkBSGRIU31Hh-UEFmzUVZwBEnb9n7KlvbMFwpMJXoGBow?e=w1cAVo)
   - Ensure the trained model follows the naming convention "vae_best-input_size:{input_size}.pt"
-- **The fitted data handler**: [Download here](#https://1drv.ms/u/c/61e43c887e06eaac/EdBygTG4xz5NthcJXI-r7mIB9XQtPvFZ18jeywuOVlb8bg?e=8bd0hP)
-- **Latent vector representations**: [Download here](#https://1drv.ms/x/c/61e43c887e06eaac/EQONE8w85dFKqch1WZN9NMYBdmAKSgQ6PWzrb4rMXVoA8w?e=z8xlbt)
+- **The fitted data handler**: [Download here](https://1drv.ms/u/c/61e43c887e06eaac/EdBygTG4xz5NthcJXI-r7mIB9XQtPvFZ18jeywuOVlb8bg?e=8bd0hP)
+- **Latent vector representations**: [Download here](https://1drv.ms/x/c/61e43c887e06eaac/EQONE8w85dFKqch1WZN9NMYBdmAKSgQ6PWzrb4rMXVoA8w?e=z8xlbt)
 
 ### Directory Placement
 
