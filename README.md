@@ -25,12 +25,13 @@ $ pip install -e .
 
 ## Download Pretrained Models and Vector Representations
 To save time, you can download the pretrained autoencoder model and the generated vector representations:
-Download the pretrained model
-Download the vector representations 
-Place these files in the appropriate directories
+- Download the pretrained model
+    - Place in a folder named trained_models in the root directory
+- Download the vector representations 
+    - Place in the root directory
 
 ## Read the Full Paper
-For a detailed explanation of our methodology, results, and the broader implications for data governance, please read the full paper:
+For a detailed explanation of the methodology, results, and the broader implications for data governance, please read the full paper:
 Read the full paper here <!-- Replace # with your actual link -->
 
 
