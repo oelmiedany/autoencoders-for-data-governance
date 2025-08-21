@@ -15,28 +15,27 @@ from datetime import datetime, timedelta
 # %% ../notebooks/4_testing.ipynb 2
 def test_error_score(reconstruction:torch.Tensor, x:torch.Tensor, not_null_mask:torch.Tensor, binary_mask:torch.Tensor)->tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     '''
-    Custom VAE loss function with masking for handling replaced NaN values
-    
+    Calculates the RMSE for numeric features and F1 score for binary features in the VAE reconstruction, using masks to ignore missing values.
+
     Args:
-        reconstruction (torch.Tensor): Reconstructed input from the decoder
-        x (torch.Tensor): Original input
-        mean (torch.Tensor): Mean of the latent distribution
-        mask (torch.Tensor): Binary mask where 1 indicates valid values and 0 indicates replaced NaN values
+        reconstruction (torch.Tensor): The reconstructed input from the VAE decoder.
+        x (torch.Tensor): The original input tensor.
+        not_null_mask (torch.Tensor): Mask indicating non-missing values in the input.
+        binary_mask (torch.Tensor): Mask indicating which features are binary.
 
     Returns:
-        tuple: (total_loss, reconstruction_loss, kl_divergence_loss)
+        tuple: (rmse_loss, f1_score) for numeric and binary features respectively.
     '''
-
-    # Reconstruction Loss (masked MSE)
     inverse_binary_mask = ~binary_mask
 
-    binary_mask = not_null_mask & binary_mask[None, :]
+    binary_mask = not_null_mask & binary_mask[None, :]# Calculate which features are numeric and which are binary
     numeric_mask = not_null_mask & inverse_binary_mask[None, :]
     
+    # RMSE
     mse_loss = F.mse_loss(reconstruction[numeric_mask], x[numeric_mask], reduction='mean')# Only compute MSE for non-masked values
     rmse_loss = torch.sqrt(mse_loss)
 
-
+    # F1 Score
     binary_values = (x[binary_mask] > 0.5).long()
     predicted_values = (reconstruction[binary_mask] > 0.5).long()
     f1_score = multiclass_f1_score(predicted_values, binary_values, num_classes=2, average='macro')
@@ -46,14 +45,27 @@ def test_error_score(reconstruction:torch.Tensor, x:torch.Tensor, not_null_mask:
 
 # %% ../notebooks/4_testing.ipynb 3
 def test_vae(model_file_name, test_loader, sigmoid_mask, binary_mask, device):
+    '''
+    Evaluates a trained VAE model on a test set, returning average RMSE and F1 score.
+
+    Args:
+        model_file_name (str): Path to the saved model file.
+        test_loader (DataLoader): DataLoader for the test set.
+        sigmoid_mask (torch.Tensor): Mask for features to apply sigmoid activation.
+        binary_mask (torch.Tensor): Mask for binary features.
+        device (torch.device): Device to run the evaluation on.
+
+    Returns:
+        tuple: (average_rmse_loss, average_f1_score) across all test batches.
+    '''
+    model = training.get_best_model(autoencoders.VariationalAutoencoder, sigmoid_mask, model_file_name)#Loads model
     
-    model = training.get_best_model(autoencoders.VariationalAutoencoder, sigmoid_mask, model_file_name)
-    
-    model.eval()
+    model.eval()# Sets model into evaluation mode
     test_rmse_loss = 0
     test_f1_score = 0
     n_batches = 0
 
+    #Test loop
     with torch.no_grad():
         for data_batch, mask_batch in test_loader:
             data_batch, mask_batch = data_batch.to(device), mask_batch.to(device)
@@ -75,20 +87,29 @@ def test_vae(model_file_name, test_loader, sigmoid_mask, binary_mask, device):
 # %% ../notebooks/4_testing.ipynb 4
 def cross_validate_vae(lending_club_data_handler: preprocessing.DataHandler, start: int, end: int, sigmoid_mask: torch.Tensor, binary_mask: torch.Tensor, learning_rate: float = 1e-3, n_folds: int = 5 ):
     '''
-    Perform k-fold cross-validation for the VAE
-    
+    Performs k-fold cross-validation for the VAE model using a time-based sliding window.
+
     Args:
-        start (datetime): Start date
-        end (datetime): End date
-        n_folds (int): Number of folds
+        lending_club_data_handler (DataHandler): Handler for loading and masking data.
+        start (datetime): Start date for the data window.
+        end (datetime): End date for the data window.
+        sigmoid_mask (torch.Tensor): Mask for features to apply sigmoid activation.
+        binary_mask (torch.Tensor): Mask for binary features.
+        learning_rate (float, optional): Learning rate for the optimiser. Defaults to 1e-3.
+        n_folds (int, optional): Number of cross-validation folds. Defaults to 5.
+
+    Returns:
+        dict: Test losses and F1 scores for each fold.
     '''
 
     total_days = (end - start).days
 
+    # Outlines propotion of each dataset
     train_size = 0.7
     validation_size = 0.15
     test_size = 0.15
 
+    # Calculate window sizes for train, validation, and test splits
     window_size = total_days / (1+train_size*(n_folds-1))
     train_step_size = window_size * train_size
     validation_step_size = window_size * validation_size
@@ -98,7 +119,9 @@ def cross_validate_vae(lending_club_data_handler: preprocessing.DataHandler, sta
 
     current_start = start
 
+    # Loops over each fold
     for fold in range(n_folds):
+        # Defines train, validation, and test periods for this fold
         train_start = current_start
         train_end = train_start + timedelta(days=int(train_step_size))
 
@@ -121,7 +144,6 @@ def cross_validate_vae(lending_club_data_handler: preprocessing.DataHandler, sta
         train_loader = preprocessing.to_torch_dataloader(train_data,train_mask)
         validation_loader = preprocessing.to_torch_dataloader(validation_data,validation_mask)
         test_loader = preprocessing.to_torch_dataloader(test_data,test_mask)
-
 
         # Instantiate model and optimiser 
         model = autoencoders.VariationalAutoencoder(input_size=len(train_data[0]), sigmoid_mask=sigmoid_mask)

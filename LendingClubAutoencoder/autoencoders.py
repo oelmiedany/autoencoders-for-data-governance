@@ -12,12 +12,11 @@ import torch.nn.functional as F
 class VariationalAutoencoder(nn.Module):
     def __init__(self, input_size:int, sigmoid_mask: torch.Tensor):
         '''
-        Variational Autoencoder for data compression and reconstruction
-        
+        Variational Autoencoder for data compression and reconstruction.
+
         Args:
-            input_size (int): Dimension of input features
-            hidden_size (int): Dimension of hidden layers (default: 64)
-            latent_size (int): Dimension of latent space (default: 32)
+            input_size (int): The number of input features.
+            sigmoid_mask (torch.Tensor): Boolean mask indicating which input features should have a sigmoid activation applied in the output layer (e.g., for binary or categorical features). Should be a 1D tensor of length input_size.
         '''
         super(VariationalAutoencoder, self).__init__()
 
@@ -50,18 +49,21 @@ class VariationalAutoencoder(nn.Module):
             nn.Linear(hidden_size_1, input_size)
         )
 
-        self.register_buffer('sigmoid_mask', sigmoid_mask.unsqueeze(0))
+        self.register_buffer('sigmoid_mask', sigmoid_mask.unsqueeze(0))#Only values between 0 and 1 have a sigmoid function applied to them at the end
         
     def encode(self, x:torch.Tensor)->tuple[torch.Tensor, torch.Tensor]:
         '''
-        Encode input data into latent space parameters
-        
+        Encodes the input data into the parameters of the latent space distribution (mean and log-variance).
+
         Args:
-            x (torch.Tensor): Input tensor
-            
+            x (torch.Tensor): Input tensor of shape [batch_size, input_size].
+
         Returns:
-            tuple: (mean, log_variance) parameters of the latent distribution
+            tuple[torch.Tensor, torch.Tensor]:
+                - mean (torch.Tensor): Mean of the latent Gaussian distribution, shape [batch_size, latent_size].
+                - log_variance (torch.Tensor): Log-variance of the latent Gaussian distribution, shape [batch_size, latent_size].
         '''
+
         # Generate latent space parameters
         hidden = self.encoder(x)
         mean = self.fc_mean(hidden)
@@ -70,14 +72,14 @@ class VariationalAutoencoder(nn.Module):
     
     def reparameterise(self, mean:torch.Tensor, log_variance:torch.Tensor)->torch.Tensor:
         '''
-        Reparameterization to enable backpropagation through random sampling
-        
+        Applies the reparameterisation to allow sampling from the latent space, enabling backpropagation through stochastic nodes.
+
         Args:
-            mean (torch.Tensor): Mean of the latent distribution
-            log_variance (torch.Tensor): Log variance of the latent distribution
-            
+            mean (torch.Tensor): Mean of the latent Gaussian distribution, shape [batch_size, latent_size].
+            log_variance (torch.Tensor): Log-variance of the latent Gaussian distribution, shape [batch_size, latent_size].
+
         Returns:
-            torch.Tensor: Sampled point from the latent distribution
+            torch.Tensor: Sampled latent vector, shape [batch_size, latent_size].
         '''
         log_variance = F.softplus(log_variance) + 1e-6 
 
@@ -87,32 +89,38 @@ class VariationalAutoencoder(nn.Module):
     
     def decode(self, latent_vector:torch.Tensor)->torch.Tensor:
         '''
-        Decode latent representation back to input space
-        
+        Decodes a latent vector back into the input feature space.
+
         Args:
-            latent_vector (torch.Tensor): Latent space representation
-            
+            latent_vector (torch.Tensor): Latent space representation, shape [batch_size, latent_size].
+
         Returns:
-            torch.Tensor: Reconstructed input
+            torch.Tensor: Reconstructed input, shape [batch_size, input_size].
         '''
         return self.decoder(latent_vector)
     
     def forward(self, x:torch.Tensor)->tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         '''
-        Forward pass through the VAE
+        Runs a forward pass through the VAE:
         
+        - Encodes the input
+        - Decodes from the latent mean
+        - Applies the appropriate output activations.
+
         Args:
-            x (torch.Tensor): Input tensor
-            
+            x (torch.Tensor): Input tensor of shape [batch_size, input_size].
+
         Returns:
-            tuple: (reconstruction, mean)
+            tuple[torch.Tensor, torch.Tensor]:
+                - reconstruction (torch.Tensor): The reconstructed input, with sigmoid applied to features as specified by sigmoid_mask.
+                - mean (torch.Tensor): The mean of the latent distribution for each input in the batch.
         '''
         mean, _ = self.encode(x)
-        #latent_vector = self.reparameterise(mean, log_variance)
+        #latent_vector = self.reparameterise(mean, log_variance)#Reparmatisation dropped to avoid latent space collapse
         raw_reconstruction = self.decode(mean)
 
         reconstruction = torch.where(
-            self.sigmoid_mask,                     # broadcast to [B,input_size]
+            self.sigmoid_mask,
             torch.sigmoid(raw_reconstruction),
             raw_reconstruction
             )

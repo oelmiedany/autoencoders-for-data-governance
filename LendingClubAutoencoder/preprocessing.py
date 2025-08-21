@@ -21,38 +21,72 @@ from torch.utils.data import DataLoader, TensorDataset
 
 # %% ../notebooks/1_preprocessing.ipynb 1
 class DataHandler():
+    '''
+    Handles preprocessing, cleaning, and transformation of Lending Club data for downstream machine learning task.
+    It provides methods for extracting, transforming, and batching data for model training and evaluation.
+    '''
     def __init__(self, csv_path: str = '../local_data/all_lending_club_loan_data_2007-2018.csv'):
-        self.cleaned_csv_path = f'{csv_path[:-4]}_cleaned.csv'
-        self.features_path = f'{csv_path[:-4]}_cleaned_features.json'
+        '''
+        Initialises the DataHandler.
 
+        - Sets up file paths for the cleaned CSV and feature metadata, and ensures the data is preprocessed and ready for use.
+        - If the cleaned data does not exist, it will trigger the cleaning process.
+        - Loads feature metadata and initialises the column transformer for feature scaling and encoding.
+
+        Args:
+            csv_path (str): Path to the raw Lending Club CSV file.
+        '''
+
+        self.cleaned_csv_path = f'{csv_path[:-4]}_cleaned.csv'#Path to cleaned data
+        self.features_path = f'{csv_path[:-4]}_cleaned_features.json'#Path to json listing the features in the cleaned dataset, organised by their type
+
+        #If a 'cleaned' version of the data is not found the raw Lending Club data from Kaggle then:
         if not os.path.exists(self.cleaned_csv_path):
-            self.strip_non_data_rows_from_lending_club_data(csv_path)
-            self.clean_lending_club_data()
+            self.strip_non_data_rows_from_lending_club_data(csv_path)#1. Formatting irregularities relating to header and footer rows are removed
+            self.clean_lending_club_data()#2.  All variables are processed based on their data type
 
+        #If the clean data is found the data features loaded to initialise the column transformer
         with open(self.features_path, 'r') as f:
             self.features = json.load(f)
 
         self.transformer = self.column_transformer = ColumnTransformer(
             transformers=[
-                ('standard_scaler', StandardScaler(), self.features['standard_scaler']),
-                ('min_max_scaler', MinMaxScaler(), self.features['min_max_scaler']),
-                ('one_hot_encoder', OneHotEncoder(drop=None, handle_unknown='ignore'), self.features['categorical'] )
+                ('standard_scaler', StandardScaler(), self.features['standard_scaler']),#Numerical data is standard scaled
+                ('min_max_scaler', MinMaxScaler(), self.features['min_max_scaler']),#Ordinal data is scaled using their min and max to maintain the distance between each option 
+                ('one_hot_encoder', OneHotEncoder(drop=None, handle_unknown='ignore'), self.features['categorical'] )#Categorical data is one hot encoded to avoid creating untrue patterns between data points
             ],
         )
 
+        #Initialises key values and flags if the training data has been set or not based on whether the values are None
         self.training_data_start_date = None
         self.training_data_end_date = None
     
     def strip_non_data_rows_from_lending_club_data(self, csv_path: str):
+        '''
+        Removes non-data rows from the raw Lending Club CSV file.
+
+        The Lending Club data may contain header or footer rows that are not part of the actual dataset.
+        This function filters out such rows, keeping only those that start with a digit or the header row, and writes the result to a temporary file.
+
+        Args:
+            csv_path (str): Path to the raw Lending Club CSV file.
+        '''
         with open(csv_path, 'r') as f:
             lines = [line for line in f if line[0].isdigit() or line.startswith('id')]
 
         with open('temp.csv', 'w') as f:
-            f.writelines(lines)
+            f.writelines(lines)#Stores the treated data in a temporary file ready to be processed
 
     def is_date_value(self, value: str) -> bool:
         '''
-        Check if a value matches month-year format (e.g., 'sep-2015')
+        Checks if a string value matches the month-year date format (e.g., 'sep-2015').
+        It's used to identify columns that contain date information in the Lending Club dataset.
+
+        Args:
+            value (str): The value to check.
+
+        Returns:
+            bool: True if the value matches the expected date format, False otherwise.
         '''
         if not isinstance(value, str) or '-' not in value:
             return False
@@ -66,20 +100,37 @@ class DataHandler():
             return False
         
     def parse_date_value(self, value: str) -> datetime:
-            '''
-            Convert month-year string to datetime
-            '''
-            if not isinstance(value, str):
-                return None
-            
-            try:
-                month_str, year_str = value.lower().split('-')
-                month_num = list(calendar.month_abbr).index(month_str.title())
-                return datetime(int(year_str), month_num, 1)
-            except:
-                return None
+        '''
+        Converts a month-year string (e.g., 'sep-2015') to a datetime object.
+
+        Args:
+            value (str): The string to convert.
+
+        Returns:
+            datetime: The corresponding datetime object, or None if conversion fails.
+        '''
+        if not isinstance(value, str):
+            return None
+        
+        try:
+            month_str, year_str = value.lower().split('-')
+            month_num = list(calendar.month_abbr).index(month_str.title())
+            return datetime(int(year_str), month_num, 1)
+        except:
+            return None
             
     def drop_undesired_columns(self, df: pl.DataFrame)-> pl.DataFrame:
+        '''
+        Removes columns that are redundant, mostly null, or not useful for modelling.
+
+        This includes explicit columns known to be unhelpful, columns with high null rates, and columns with certain prefixes.
+
+        Args:
+            df (pl.DataFrame): The input Polars DataFrame.
+
+        Returns:
+            pl.DataFrame: The DataFrame with undesired columns dropped.
+        '''
         explicit_columns_to_drop = [
             'id',                       # Unique identifier
             'funded_amnt',              # Redundant due to loan_amnt
@@ -105,7 +156,7 @@ class DataHandler():
         )
 
         implicit_columns_to_drop = [column for column in df.columns if column.startswith(implicit_columns_to_drop)]
-        high_null_cols = [column for column in df.columns  if (df[column].null_count() / len(df)) > 0.2]
+        high_null_cols = [column for column in df.columns  if (df[column].null_count() / len(df)) > 0.2]#If  more than 20% of the values are null the column is dropped
 
         columns_to_drop = explicit_columns_to_drop + implicit_columns_to_drop + high_null_cols
         columns_to_drop = list(set(columns_to_drop))
@@ -113,6 +164,17 @@ class DataHandler():
         return df.drop(columns_to_drop)
 
     def convert_employment_length(self, value: str) -> float:
+        '''
+        Converts employment length from string format to a float.
+        It handles special cases such as '< 1 year' and '10+ years', and returns None for missing values.
+
+        Args:
+            value (str): The employment length as a string.
+
+        Returns:
+            float: The employment length in years, or None if not applicable.
+        '''
+
         if value is None or value == 'n/a':
             return None
         if value == '< 1 year':
@@ -123,10 +185,13 @@ class DataHandler():
 
     def clean_lending_club_data(self):
         '''
-        Process Lending Club data:
-        1. Identify null and date (month-year format) columns
-        2. Deelete null columns
-        2. Convert identified date columns to datetime
+        Clean and preprocess the Lending Club dataset.
+
+        - Identifies and removes columns that are entirely null or contain date strings.
+        - Converts date columns to datetime objects and adds derived features.
+        - Converts and engineers other features (e.g., employment length, grade).
+        - Drops undesired columns.
+        - Saves the cleaned data and feature metadata for later use.
         '''
 
         df = pl.read_csv('temp.csv')
@@ -159,13 +224,15 @@ class DataHandler():
             ])
 
             #Include month and year columns for each date column
-            expressions = []
-            for col in date_columns:
-                expressions.extend([
-                    (pl.col(col).cast(pl.Int64)/pl.lit(2.628e+15)).alias(f'{col}_unicode_month')
-                ])
-            df = df.with_columns(expressions)
+            #expressions = []
+            #for col in date_columns:
+                #expressions.extend([
+                    #(pl.col(col).cast(pl.Int64)/pl.lit(2.628e+15)).alias(f'{col}_unicode_month')
+                #])
+            #df = df.with_columns(expressions)
+            df = df.drop()
 
+        #Ensures ordinal data is stored as integers while numerical data are floats
         df = df.with_columns([
             pl.col('term').str.extract(r'(\d+)').cast(pl.Int64).alias('term_months'),
             pl.col('emp_length').map_elements(self.convert_employment_length, return_dtype=pl.Float64).alias('employment_years'),
@@ -176,8 +243,9 @@ class DataHandler():
         
         df = self.drop_undesired_columns(df)
 
-        os.remove('temp.csv')
+        os.remove('temp.csv')#Removes temporary file
 
+        #Seperates the different columns by their data type
         standard_scaler_columns = [column for column, dtype in df.schema.items() 
                            if dtype==pl.Float64]
         min_max_scaler_columns = [column for column, dtype in df.schema.items() 
@@ -189,25 +257,36 @@ class DataHandler():
             'standard_scaler': standard_scaler_columns,
             'min_max_scaler': min_max_scaler_columns,
             'categorical': categorical_columns
-        }
+        }#Feature dictionary used to initialise the transformer
 
         with open(self.features_path, 'w') as f:
             json.dump(features_dict, f, indent=2)
 
         df = df.with_columns([
             pl.col(col).fill_null('missing') for col in categorical_columns
-        ])
+        ])#Ensures all missing values are represented the same way
 
         df.write_csv(self.cleaned_csv_path)
 
     def get_data_by_date_range(self, start_date: datetime, end_date: datetime, date_column: str = 'issue_d', return_unlisted_columns: bool = False):
         '''
-        Extract rows between two datetime values using a lazy frame
+        Extracts the rows from the cleaned dataset that fall within a specified date range.
+
+        All columns can be returned or only those used for modelling.
+
+        Args:
+            start_date (datetime): The start date (inclusive).
+            end_date (datetime): The end date (inclusive).
+            date_column (str): The column to filter by date.
+            return_unlisted_columns (bool): If True, return all columns; otherwise, drop datetime columns.
+
+        Returns:
+            pl.DataFrame: The filtered DataFrame.
         '''
         lf = pl.scan_csv(
             self.cleaned_csv_path, 
             low_memory=True,
-            try_parse_dates=True)
+            try_parse_dates=True)#Lazy frame is used for efficiency
         
         filtered_lf = lf.filter(
             pl.col(date_column).is_between(start_date, end_date)
@@ -217,18 +296,30 @@ class DataHandler():
             return filtered_lf.collect()
         else:
             df = filtered_lf.collect()
-            df = filtered_lf.collect()
 
             datetime_columns = [column for column in df.columns if df[column].dtype == pl.Datetime]
 
-            return df.drop(datetime_columns)
+            return df.drop(datetime_columns)#Dates are stored both through their unicode representation and as a datetime, the datetime is only required for filtering, it's disgarded for modelling
 
     def get_train_data(self, start_date: datetime, end_date: datetime)-> tuple[np.ndarray, np.ndarray]:
-        '''Get transformed data ready for the autoencoder'''
+        '''
+        Returns transformed training data for the autoencoder.
+        Extracts data within the specified date range, applies feature transformations, and returns the data along with a mask indicating non-missing values.
+
+        Args:
+            start_date (datetime): The start date for training data.
+            end_date (datetime): The end date for training data.
+
+        Returns:
+            tuple: (transformed_data, missing_mask)
+                transformed_data (np.ndarray): The transformed feature matrix.
+                missing_mask (np.ndarray): Boolean mask where True indicates non-missing values.
+        '''
         self.training_data_start_date = start_date
         self.training_data_end_date = end_date
 
         raw_data = self.get_data_by_date_range(start_date, end_date, date_column='issue_d', return_unlisted_columns=False)
+
         transformed_data = self.transformer.fit_transform(raw_data)
         
         missing_mask = ~np.isnan(transformed_data)
@@ -237,6 +328,25 @@ class DataHandler():
         return transformed_data, missing_mask
 
     def get_test_data(self, start_date: datetime, end_date: datetime)-> tuple[np.ndarray, np.ndarray]:
+        '''
+        Returns transformed test data for the autoencoder.
+
+        Extracts data within the specified date range, applies the previously fitted feature transformations, and returns the data and mask.
+        Ensures there is no overlap with the training data.
+
+        Args:
+            start_date (datetime): The start date for test data.
+            end_date (datetime): The end date for test data.
+
+        Returns:
+            tuple: (transformed_data, not_null_mask)
+                transformed_data (np.ndarray): The transformed feature matrix.
+                not_null_mask (np.ndarray): Boolean mask where True indicates non-missing values.
+
+        Raises:
+            ValueError: If training data has not been set or if there is overlap with training data.
+        '''
+
         if self.training_data_start_date is None or self.training_data_end_date is None:
             raise ValueError('Training data not set. Please call get_training_data first.')
         
@@ -253,9 +363,24 @@ class DataHandler():
             raise ValueError('There is an overlap between the training and test data.')
         
     def get_transformed_data_feature_names(self):
+        '''
+        Returns the names of the features after the column transformation is applied.
+
+        Returns:
+            np.ndarray: Array of feature names as output by the column transformer.
+        '''
         return self.transformer.get_feature_names_out()
     
     def get_sigmoid_feature_mask(self, as_torch=False):
+        '''
+        Returns a mask indicating which features should use a sigmoid activation (i.e., one-hot or min-max scaled).
+
+        Args:
+            as_torch (bool): If True, return as a torch tensor; otherwise, as a numpy array.
+
+        Returns:
+            np.ndarray or torch.Tensor: Boolean mask for sigmoid features.
+        '''
         mask = np.array([1 if ('one_hot_encoder' in name or 'min_max_scaler' in name) else 0
                          for name in self.transformer.get_feature_names_out()])
         
@@ -265,6 +390,15 @@ class DataHandler():
             return mask
     
     def get_binary_feature_mask(self, as_torch=False):
+        '''
+        Returns a mask indicating which features are binary (i.e., one-hot encoded or flag features).
+
+        Args:
+            as_torch (bool): If True, return as a torch tensor; otherwise, as a numpy array.
+
+        Returns:
+            np.ndarray or torch.Tensor: Boolean mask for binary features.
+        '''
         mask = np.array([1 if ('one_hot_encoder' in name or 'flag' in name) else 0
                          for name in self.transformer.get_feature_names_out()])
         if as_torch:
@@ -274,6 +408,18 @@ class DataHandler():
 
 # %% ../notebooks/1_preprocessing.ipynb 2
 def to_torch_dataloader(data, not_null_mask, batch_size: int = 64):
+    '''
+    Takes numpy arrays for the data and the corresponding not-null mask, converts them to PyTorch tensors,
+    and returns a DataLoader for batching and shuffling during model training.
+
+    Args:
+        data (np.ndarray): The feature matrix to be loaded.
+        not_null_mask (np.ndarray): Boolean mask indicating non-missing values in the data.
+        batch_size (int, optional): Number of samples per batch. Defaults to 64.
+
+    Returns:
+        DataLoader: A PyTorch DataLoader yielding batches of (data, mask) tuples.
+    '''
     data_tensor = torch.FloatTensor(data)
     not_null_mask_tensor = torch.BoolTensor(not_null_mask)
 

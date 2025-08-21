@@ -16,6 +16,7 @@ import os
 def masked_vae_loss(reconstruction:torch.Tensor, x:torch.Tensor, not_null_mask:torch.Tensor, binary_mask:torch.Tensor)->tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     '''
     Custom VAE loss function with masking for handling replaced NaN values
+    It combines root mean square error for numerical values with the binary cross entropy loss for categorical features 
     
     Args:
         reconstruction (torch.Tensor): Reconstructed input from the decoder
@@ -27,19 +28,21 @@ def masked_vae_loss(reconstruction:torch.Tensor, x:torch.Tensor, not_null_mask:t
         tuple: (total_loss, reconstruction_loss, kl_divergence_loss)
     '''
 
-    # Reconstruction Loss (masked MSE)
+    # Create masks for binary and numeric features
+
     inverse_binary_mask = ~binary_mask
 
     binary_mask = not_null_mask & binary_mask[None, :]
     numeric_mask = not_null_mask & inverse_binary_mask[None, :]
     
+    # Calculate RMSE loss for numeric features only
     mse_loss = F.mse_loss(reconstruction[numeric_mask], x[numeric_mask], reduction='mean')# Only compute MSE for non-masked values
     rmse_loss = torch.sqrt(mse_loss)
 
+    # Calculate BCE loss for binary features only
     bce_loss = F.binary_cross_entropy(reconstruction[binary_mask], x[binary_mask], reduction='mean')
     
-    # Total loss (beta-VAE formulation)
-    total_loss = rmse_loss + bce_loss * 2
+    total_loss = rmse_loss + bce_loss * 2# Combine losses (with weighting for BCE to create parity in the prioritisation of both feature types)
         
     return total_loss, rmse_loss, bce_loss
 
@@ -47,27 +50,35 @@ def masked_vae_loss(reconstruction:torch.Tensor, x:torch.Tensor, not_null_mask:t
 # %% ../notebooks/3_training.ipynb 3
 def train_variational_autoencoder(model, optimiser, train_loader, validation_loader, binary_mask, n_epochs:int=100, patience:int=10, device:str='cuda'):
     '''
-    Training loop for the VAE with early stopping
-    
+    Trains a Variational Autoencoder (VAE) model with early stopping based on validation loss.
+
     Args:
-        model (VAE): The VAE model
-        optimiser (torch.optim.optimiser): The optimiser
-        train_loader (DataLoader): Training data
-        validation_loader (DataLoader): Validation data
-        n_epochs (int): Maximeanm number of epochs
-        patience (int): Number of epochs to wait for improvement before stopping
-        device (str): Device to train on
+        model: The VAE model to be trained.
+        optimiser: The optimiser for updating model parameters.
+        train_loader: DataLoader for the training data.
+        validation_loader: DataLoader for the validation data.
+        binary_mask: Mask indicating which features are binary.
+        n_epochs (int, optional): Maximum number of training epochs. Default is 100.
+        patience (int, optional): Number of epochs to wait for improvement before early stopping. Default is 10.
+        device (str, optional): Device to use for training ('cuda' or 'cpu'). Default is 'cuda'.
+
+    Returns:
+        None. The best model is saved to disk during training.
     '''
+
+    # Move model and mask to the specified device
     model = model.to(device)
     binary_mask = binary_mask.to(device)
 
     first_run = True
     
+    # Initialise early stopping variables
     best_validation_loss = float('inf')
     patience_counter = 0
     
+    # Training loop
     for epoch in range(n_epochs):
-        model.train()
+        model.train()# Set model to training mode
         train_total_loss = 0
         train_rmse_loss = 0
         train_bce_loss = 0
@@ -79,18 +90,18 @@ def train_variational_autoencoder(model, optimiser, train_loader, validation_loa
 
             loss, rmse_loss, bce_loss = masked_vae_loss(
                 reconstruction, data, not_null_mask, binary_mask
-            )
+            )# Forward pass and compute loss
             
             optimiser.zero_grad()
-            loss.backward()
-            optimiser.step()
+            loss.backward()#Backpropagation
+            optimiser.step()#Optimiser step
             
-            train_total_loss = train_total_loss + loss.item()
+            train_total_loss = train_total_loss + loss.item()# Accumulate training losses
             train_rmse_loss = train_rmse_loss + rmse_loss.item()
             train_bce_loss = train_bce_loss + bce_loss.item()
             
         # Validation Phase  
-        model.eval()
+        model.eval()# Set model to evaluation mode
         validation_total_loss = 0
         validation_rmse_loss = 0
         validation_bce_loss = 0
@@ -104,11 +115,11 @@ def train_variational_autoencoder(model, optimiser, train_loader, validation_loa
                     reconstruction, data, not_null_mask, binary_mask
                 )
                 
-                validation_total_loss = validation_total_loss + loss.item()
+                validation_total_loss = validation_total_loss + loss.item()# Accumulate validation losses
                 validation_rmse_loss = validation_rmse_loss + rmse_loss.item()
                 validation_bce_loss = validation_bce_loss + bce_loss.item()
 
-        print("Mean stats:", mean.mean().item(), mean.std().item())
+        print("Mean stats:", mean.mean().item(), mean.std().item())# Print statistics for the current epoch
         
         # Calculate average losses
         average_train_loss = train_total_loss / len(train_loader)
@@ -127,7 +138,7 @@ def train_variational_autoencoder(model, optimiser, train_loader, validation_loa
                 os.makedirs('trained_models', exist_ok=True)
                 first_run = False
 
-            file_name = f'trained_models/vae_best-input_size:{model.input_size}.pt'
+            file_name = f'trained_models/vae_best-input_size~{model.input_size}.pt'
             torch.save(model.state_dict(), file_name)
 
         else:
@@ -138,23 +149,35 @@ def train_variational_autoencoder(model, optimiser, train_loader, validation_loa
 
 # %% ../notebooks/3_training.ipynb 4
 def get_best_model(model_class, sigmoid_mask, file_name:str = None):
+    '''
+    Loads the best saved VAE model from disk, reconstructing its arguments from the filename.
+
+    Args:
+        model_class: The class of the VAE model to instantiate.
+        sigmoid_mask: Mask indicating which features require a sigmoid activation.
+        file_name (str, optional): Path to the saved model file. If None, will search for the best model in 'trained_models/'.
+
+    Returns:
+        model: The loaded VAE model with weights restored.
+    '''
     if file_name is None:
-        matching_files = glob.glob('trained_models/vae_best*.pt')
+        matching_files = glob.glob('trained_models/vae_best*.pt')#Returns first eligible model if specific model is not outlined
 
         if matching_files:
             file_name = matching_files[0]
         else:
             raise FileNotFoundError(f'No best model found in ../trained_models/')
     
+    # Parse model parameters from the filename
     parameters = file_name[:]
     parameters = parameters.split('.p')[0]
     parameters = parameters.split('-')[1:]
 
-    model_args = {parameter.split(':')[0] : int(parameter.split(':')[1]) for parameter in parameters}
+    model_args = {parameter.split('~')[0] : int(parameter.split('~')[1]) for parameter in parameters}
     model_args['sigmoid_mask'] = sigmoid_mask
  
     model = model_class(**model_args)
-    model.load_state_dict(torch.load(file_name, map_location=torch.device('cpu')))
+    model.load_state_dict(torch.load(file_name, map_location=torch.device('cpu')))# Load model weights from file
 
     return model
 
