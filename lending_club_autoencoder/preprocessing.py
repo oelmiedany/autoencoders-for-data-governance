@@ -223,15 +223,6 @@ class DataHandler():
                 for col in date_columns
             ])
 
-            #Include month and year columns for each date column
-            #expressions = []
-            #for col in date_columns:
-                #expressions.extend([
-                    #(pl.col(col).cast(pl.Int64)/pl.lit(2.628e+15)).alias(f'{col}_unicode_month')
-                #])
-            #df = df.with_columns(expressions)
-            df = df.drop()
-
         #Ensures ordinal data is stored as integers while numerical data are floats
         df = df.with_columns([
             pl.col('term').str.extract(r'(\d+)').cast(pl.Int64).alias('term_months'),
