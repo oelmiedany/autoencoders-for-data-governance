@@ -1,32 +1,24 @@
 # Autoencoders for Data Governance
 
-This repository accompanies a paper exploring the intersection of machine learning and data governance, with a particular focus on the use of autoencoders. This work investigates how autoencoders can be leveraged to create latent vector representations of tabular data, which in turn can be used to more effectively monitor and explore distribution drift, a key challenge when deploying and maintaining models.
+This repository accompanies a paper exploring the intersection of machine learning and data governance, with a particular focus on the use of autoencoders. It investigates how autoencoders can be leveraged to create latent vector representations of tabular data, which in turn can be used to more effectively monitor and explore distribution drift, a key challenge when deploying and maintaining models.
 
 ## Project Overview
+Data governance is increasingly important as organisations progressively rely on models and insights built on large, dynamic datasets for decision making. Yet this reliance on live data makes governance inseparable from the problem of distribution drift, as shifts in the underlying distribution alter the patterns on which analytics are built upon, amplifying risk when left unaddressed.
 
-Data governance is increasingly important as organisations increasingly rely on large, dynamic datasets. One challenge is detecting and understanding distribution drift, as changes in the underlying distribution can impact downstream analytics, compliance, and machine learning model performance.
-
-In this project, we demonstrate how autoencoders, a type of unsupervised neural network, can be trained on tabular data to produce compact, informative latent vectors., which can be used to:
-1. Visualise and quantify distribution drift over time
-2. Comparing datasets for similarity
-3. Supporting data quality and governance workflows with machine learning insights
+In this project, I demonstrate how autoencoders, a type of unsupervised neural network, can be trained on tabular data to produce compact, informative latent vectors, which can be used to:
+1. Identify and visualise distribution drift over time.
+2. Quantify the nature and direction of the shift.
+3. Fascilitate an early warning system.
 
 ## Getting Started
 1. Clone the Repository
-2. Install Dependencies. We recommend using a virtual environment. To install all required packages, run:
+2. Install dependencies by running
 ``` sh
 $ pip install -e .
 ```
-
-## Download Pretrained Models and Vector Representations
-To save time, you can download the pretrained autoencoder model and the generated vector representations:
-- Download the pretrained model
-    - Place in a folder named trained_models in the root directory
-- Download the vector representations 
-    - Place in the root directory
+3.  Open and run the notebook: [`vae_data_governance_experiment.ipynb`](./experiments/vae_data_governance_experiment.ipynb) in the `experiments` directory.
 
 ## Read the Full Paper
-For a detailed explanation of the methodology, results, and the broader implications for data governance, please read the full paper:
-Read the full paper here <!-- Replace # with your actual link -->
+For a detailed explanation of the methodology, results, and a broader discussion on the role of machine learning in data governance please read the [full paper] (https://1drv.ms/b/c/61e43c887e06eaac/EX7GH0tV7idPjUWw6Q73ZYYBbTg1ILnaXzSe81xOVy_2cA?e=U33R7Y)
 
 
