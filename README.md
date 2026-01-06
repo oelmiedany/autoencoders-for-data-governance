@@ -19,6 +19,6 @@ $ pip install -e .
 3.  Open and run the notebook: [`vae_data_governance_experiment.ipynb`](./experiments/vae_data_governance_experiment.ipynb) in the `experiments` directory.
 
 ## Read the Full Paper
-For a detailed explanation of the methodology, results, and a broader discussion on the role of machine learning in data governance please read the full article [here] (https://medium.com/@omarelmiedany/from-governance-to-insight-using-autoencoders-to-monitor-data-distribution-drift-9a66751fa32a)
+For a detailed explanation of the methodology, results, and a broader discussion on the role of machine learning in data governance please read the full article [here](https://medium.com/@omarelmiedany/from-governance-to-insight-using-autoencoders-to-monitor-data-distribution-drift-9a66751fa32a)
 
 
